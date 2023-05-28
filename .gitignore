@@ -6,3 +6,4 @@
 .gitignore
 *.txt
 *.png
+code/sendnotify.py

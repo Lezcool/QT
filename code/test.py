@@ -448,7 +448,7 @@ if __name__ == '__main__':
                 name = file.split('.')[0]
                 args.maperiod = params[name]
                 args.data = os.path.join(folder,file)
-                print('*'*10,file,'*'*10)
+                print('*'*10,name,'*'*10)
                 main(args)
 
     else:
