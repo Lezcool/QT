@@ -286,7 +286,9 @@ class myStrategy(bt.Strategy):
             action4, amount4 = self.macd_ind()
             # if more than 2 of 3 agree, take action
             if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}, MACD: {action4}')
-            if [action1,action2, action3,action4].count('buy') >= 2:
+            if [action1,action2, action3,action4].count('buy') == 2 and [action1,action2, action3,action4].count('sell')==2:
+                return 'hold',0
+            elif [action1,action2, action3,action4].count('buy') >= 2:
                 return 'buy', amount2
             elif [action1,action2, action3,action4].count('sell') >= 2:
                 return 'sell', amount2
