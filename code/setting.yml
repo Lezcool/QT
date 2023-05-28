@@ -1,0 +1,39 @@
+NFLX:
+  maperiod:17
+  beta:
+FFIE:
+  maperiod:27
+  beta:
+
+COIN:
+  maperiod:23
+  beta:
+
+NVDA:
+  maperiod:25
+  beta:
+
+
+DIDIY:
+  maperiod:30
+  beta:
+
+META:
+  maperiod:24
+  beta:
+
+BILI:
+  maperiod:19
+  beta:
+
+SPCE:
+  maperiod:20
+  beta:
+
+BABA:
+  maperiod:12
+  beta:
+
+AAPL:
+  maperiod:13
+  beta:

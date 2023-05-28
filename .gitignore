@@ -2,3 +2,6 @@
 /sma.png
 /venvQT
 /data
+*.csv
+.gitignore
+*.txt
