@@ -135,6 +135,9 @@ class myStrategy(bt.Strategy):
         df = pd.read_csv(args.data,index_col=0)
         self.ts = get_ts(df)
 
+        #get final date in the data
+        self.final_date = self.datas[0].datetime.date(0)
+
         # To keep track of pending orders and buy price/commission
         self.order = None
         self.buyprice = None
@@ -280,12 +283,13 @@ class myStrategy(bt.Strategy):
             action1, amount1 = self.ai_ind()
             action2, amount2 = self.sma_ind()
             action3, amount3 = self.rsi_ind()
-            action4, amount4 = self.macd_ind()
+            # action4, amount4 = self.macd_ind()
             # if more than 2 of 3 agree, take action
-            if [action1, action2, action3,action4].count('buy') >= 2:
-                return 'buy', amount1
-            elif [action1, action2, action3,action4].count('sell') >= 2:
-                return 'sell', amount1
+            if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}')
+            if [action1,action2, action3].count('buy') >= 2:
+                return 'buy', amount2
+            elif [action1,action2, action3].count('sell') >= 2:
+                return 'sell', amount2
             else:
                 return 'hold', 0
         else:
@@ -299,8 +303,15 @@ class myStrategy(bt.Strategy):
         # Check if an order is pending ... if yes, we cannot send a 2nd one
         if self.order:
             return
-
+        
+        #skip if is not final date
+        # print(self.datas[0].datetime.date(0),self.final_date)
+        if args.forcast and self.datas[0].datetime.date(0) < self.final_date:
+            return
         action, amount = self.predict()
+
+        if args.forcast: print(f'Final Action: {action}')
+
         # Check if we are in the market
         # if not self.position:
         if action == 'buy':
@@ -320,13 +331,15 @@ class myStrategy(bt.Strategy):
         self.lowest = min(self.lowest, self.broker.getvalue())
 
     def stop(self):
+        if args.forcast: return
         self.analyzers.mysharpe.stop()
         sharpe_ratio = self.analyzers.mysharpe.get_analysis()['sharperatio']
+        if sharpe_ratio is None: sharpe_ratio = 0
         self.log('(MA Period %2d) (beta %2f) Ending Value %.2f Highest %.2f Lowest %.2f Sharp ratio %.2f' %
                  (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio), doprint=True)
         
         # append results to csv file
-        with open(os.path.join('/zhome/dc/1/174181/docs/QT/results',f'{args.method}_results.csv'), 'a') as f:
+        with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'a') as f:
             f.write(f'{self.company},{self.params.maperiod},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio}\n')
         f.close()
         
@@ -348,6 +361,8 @@ def parse_args():
     parser.add_argument('--folder_mode',action='store_true' ,default=False,help='run data set in folder')
     parser.add_argument('--plot',action='store_true' ,default=False,help='plot')
     parser.add_argument('--config',default='/zhome/dc/1/174181/docs/QT/code/setting.yml',help='maperiod config')
+    parser.add_argument('--save_path',default='/zhome/dc/1/174181/docs/QT/results',help='save path')
+    parser.add_argument('--forcast',action='store_true' ,default=False,help='forcast today')
 
     return parser.parse_args()
 
@@ -365,7 +380,8 @@ def main(args):
     ts = get_ts(df)
     sp = int(0.5*(len(ts)))
     fromdate,todate = ts.ds.iloc[sp], ts.ds.iloc[-1]
-
+    # add one more day to make sure we have the last day
+    todate = todate + datetime.timedelta(days=1)
     # Add a strategy
     if args.optimize:
         if args.method == 'sma':
@@ -410,13 +426,13 @@ def main(args):
     # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
     if not args.optimize and args.plot:
         cerebro.plot()
-        plt.savefig(os.path.join('/zhome/dc/1/174181/docs/QT/results',f'{filename}_{args.method}.png'))
+        plt.savefig(os.path.join(args.save_path,f'{filename}_{args.method}.png'))
 
 
 if __name__ == '__main__':
     args = parse_args()
     # create new csv file
-    with open(os.path.join('/zhome/dc/1/174181/docs/QT/results',f'{args.method}_results.csv'), 'w') as f:
+    with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'w') as f:
         f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio\n')
     f.close()
 
