@@ -310,7 +310,7 @@ class myStrategy(bt.Strategy):
             return
         action, amount = self.predict()
 
-        if args.forcast: print(f'Final Action: {action}')
+        if args.forcast: print(f'{self.datas[0].datetime.date(0)} Final Action: {action}')
 
         # Check if we are in the market
         # if not self.position:
