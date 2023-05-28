@@ -1,39 +1,22 @@
+# maperiod config file
+
 NFLX:
-  maperiod:17
-  beta:
+  17
 FFIE:
-  maperiod:27
-  beta:
-
+  27
 COIN:
-  maperiod:23
-  beta:
-
+  23
 NVDA:
-  maperiod:25
-  beta:
-
-
+  25
 DIDIY:
-  maperiod:30
-  beta:
-
+  30
 META:
-  maperiod:24
-  beta:
-
+  24
 BILI:
-  maperiod:19
-  beta:
-
+  19
 SPCE:
-  maperiod:20
-  beta:
-
+  20
 BABA:
-  maperiod:12
-  beta:
-
+  12
 AAPL:
-  maperiod:13
-  beta:
+  13

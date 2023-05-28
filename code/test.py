@@ -15,6 +15,7 @@ from backtrader.utils.py3 import map
 from backtrader import Analyzer, TimeFrame
 from backtrader.mathsupport import average, standarddev
 from backtrader.analyzers import AnnualReturn
+import yaml
 
 import logging
 # silence pyfolio warnings
@@ -140,9 +141,13 @@ class myStrategy(bt.Strategy):
         self.buycomm = None
 
         # Add a MovingAverageSimple indicator
-        self.sma = bt.indicators.SimpleMovingAverage(
-            self.datas[0], period=self.params.maperiod)
+        self.sma = bt.indicators.SimpleMovingAverage(self.datas[0], period=self.params.maperiod)
+        # Add a RSI indicator
+        self.rsi= bt.indicators.RSI_Safe(self.datas[0],period=14)
+        # Add a MACD indicator
+        self.macd = bt.indicators.MACDHisto(self.datas[0],period_me1=12,period_me2=26,period_signal=9)
         
+        # recode values
         self.beta = self.params.beta
         self.highest = self.broker.get_cash()
         self.lowest = self.broker.get_cash()
@@ -190,7 +195,7 @@ class myStrategy(bt.Strategy):
         self.log('OPERATION PROFIT, GROSS %.2f, NET %.2f' %
                  (trade.pnl, trade.pnlcomm))
         
-    def ai_desicion(self):
+    def ai_ind(self):
         #get current date
         date = self.datas[0].datetime.date(0)
         date = pd.to_datetime(date)
@@ -220,7 +225,7 @@ class myStrategy(bt.Strategy):
                 return 'sell', amount
         return 'hold', 0
     
-    def sma_desicion(self):
+    def sma_ind(self):
         cash = self.broker.get_cash()
         stake = self.broker.getposition(self.data).size
         close = self.dataclose[0]
@@ -232,18 +237,55 @@ class myStrategy(bt.Strategy):
             if stake ==1: amount = 1
             return 'sell', amount
         return 'hold', 0
+    
+    def rsi_ind(self):
+        cash = self.broker.get_cash()
+        stake = self.broker.getposition(self.data).size
+        close = self.dataclose[0]
+
+        if self.rsi > 70:
+            amount=int(stake*0.5)
+            if stake ==1: amount = 1
+            return 'sell', amount
+        elif self.rsi< 30:
+            amount=int(cash*0.5/close)
+            return 'buy', amount
+        return 'hold', 0
+        
+    def macd_ind(self):
+        cash = self.broker.get_cash()
+        stake = self.broker.getposition(self.data).size
+        close = self.dataclose[0]
+
+        if self.macd[0] > 0 and self.macd[-1] <= 0:
+            amount=int(cash*0.5/close)
+            return 'buy', amount
+        elif self.macd[0] < 0 and self.macd[-1] >= 0:
+            # 当MACD柱状图从正值变为负值时，产生卖出信号
+            amount=int(stake*0.5)
+            if stake ==1: amount = 1
+            return 'sell', amount
+        return 'hold', 0
 
     def predict(self):
         if args.method == 'ai':
-            return self.ai_desicion()
+            return self.ai_ind()
         elif args.method == 'sma':
-            return self.sma_desicion()
-
+            return self.sma_ind()
+        elif args.method == 'rsi':
+            return self.rsi_ind()
+        elif args.method == 'macd':
+            return self.macd_ind()
         elif args.method == 'vote':
-            action1, amount1 = self.ai_desicion()
-            action2, amount2 = self.sma_desicion()
-            if action1 == action2:
-                return action1, max(amount1, amount2)
+            action1, amount1 = self.ai_ind()
+            action2, amount2 = self.sma_ind()
+            action3, amount3 = self.rsi_ind()
+            action4, amount4 = self.macd_ind()
+            # if more than 2 of 3 agree, take action
+            if [action1, action2, action3,action4].count('buy') >= 2:
+                return 'buy', amount1
+            elif [action1, action2, action3,action4].count('sell') >= 2:
+                return 'sell', amount1
             else:
                 return 'hold', 0
         else:
@@ -278,12 +320,13 @@ class myStrategy(bt.Strategy):
         self.lowest = min(self.lowest, self.broker.getvalue())
 
     def stop(self):
-        self.log('(MA Period %2d) (beta %2f) Ending Value %.2f Highes %.2f Lowest %.2f' %
-                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest), doprint=True)
         self.analyzers.mysharpe.stop()
         sharpe_ratio = self.analyzers.mysharpe.get_analysis()['sharperatio']
+        self.log('(MA Period %2d) (beta %2f) Ending Value %.2f Highest %.2f Lowest %.2f Sharp ratio %.2f' %
+                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio), doprint=True)
+        
         # append results to csv file
-        with open(f'{args.method}_results.csv', 'a') as f:
+        with open(os.path.join('/zhome/dc/1/174181/docs/QT/results',f'{args.method}_results.csv'), 'a') as f:
             f.write(f'{self.company},{self.params.maperiod},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio}\n')
         f.close()
         
@@ -298,11 +341,13 @@ def parse_args():
     )
     parser.add_argument('--data', default='/zhome/dc/1/174181/docs/QT/data/NVDA.csv',
                         required=False, help='Data to read in')
-    parser.add_argument('--method', default='ai',help='ai or sma')
+    parser.add_argument('--method', default='ai',help='ai, sma, rsi')
     parser.add_argument('--maperiod',type=int, default=10,help='sma period')
     parser.add_argument('--optimize',action='store_true' ,default=False,help='optimize sma')
-    parser.add_argument('--beta',type=float, default=0.1 ,help='higher than beta %, buy')
+    parser.add_argument('--beta',type=float, default=0.05 ,help='higher than beta %, buy')
     parser.add_argument('--folder_mode',action='store_true' ,default=False,help='run data set in folder')
+    parser.add_argument('--plot',action='store_true' ,default=False,help='plot')
+    parser.add_argument('--config',default='/zhome/dc/1/174181/docs/QT/code/setting.yml',help='maperiod config')
 
     return parser.parse_args()
 
@@ -328,14 +373,14 @@ def main(args):
         elif args.method == 'ai':
             strats = cerebro.optstrategy(myStrategy, beta=[0.05,0.1,0.15,0.2,0.25,0.3])
         elif args.method =='vote':
-            strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31,2), beta=0.05)
+            strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31,2), beta=args.beta)
     else:
         cerebro.addstrategy(myStrategy,maperiod=args.maperiod,beta=args.beta)
     # 
     # modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
     # datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
     datapath = args.data
-    filename = os.path.basename(datapath)
+    filename = os.path.basename(datapath).split('.')[0]
     # Create a Data Feed
     data = bt.feeds.YahooFinanceCSVData(
         dataname=datapath,
@@ -363,21 +408,29 @@ def main(args):
     # Run over everything
     cerebro.run()
     # print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
-    if not args.optimize:
+    if not args.optimize and args.plot:
         cerebro.plot()
-        plt.savefig(os.path.join('/results',f'{filename}_{args.method}.png'))
+        plt.savefig(os.path.join('/zhome/dc/1/174181/docs/QT/results',f'{filename}_{args.method}.png'))
 
 
 if __name__ == '__main__':
     args = parse_args()
     # create new csv file
-    with open(f'{args.method}_results.csv', 'w') as f:
+    with open(os.path.join('/zhome/dc/1/174181/docs/QT/results',f'{args.method}_results.csv'), 'w') as f:
         f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio\n')
     f.close()
+
+    file = args.config
+    with open(file) as file:
+        params = yaml.load(file, Loader=yaml.FullLoader)
+    file.close()
+
     if args.folder_mode:
         folder = args.data
         for file in os.listdir(folder):
             if file.endswith('.csv'):
+                name = file.split('.')[0]
+                args.maperiod = params[name]
                 args.data = os.path.join(folder,file)
                 print('*'*10,file,'*'*10)
                 main(args)
