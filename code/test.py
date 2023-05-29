@@ -18,7 +18,7 @@ from backtrader.analyzers import AnnualReturn
 import yaml
 
 import logging
-import tqdm
+from tqdm import tqdm
 # silence pyfolio warnings
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled=True
@@ -287,9 +287,9 @@ class myStrategy(bt.Strategy):
             action4, amount4 = self.macd_ind()
             # if more than 2 of 3 agree, take action
             if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}')
-            if [action1,action1,action2, action3,action4].count('buy') >= 3:
+            if [action1,action4,action2, action3,action4].count('buy') >= 3:
                 return 'buy', amount2
-            elif [action1,action1,action2, action3,action4].count('sell') >= 3:
+            elif [action1,action4,action2, action3,action4].count('sell') >= 3:
                 return 'sell', amount2
             else:
                 return 'hold', 0
@@ -388,7 +388,7 @@ def main(args):
         if args.method == 'sma':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31))
         elif args.method == 'ai':
-            strats = cerebro.optstrategy(myStrategy, beta=[0.05,0.1,0.15,0.2,0.25,0.3])
+            strats = cerebro.optstrategy(myStrategy, beta=[0.05])
         elif args.method =='vote':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31,2), beta=args.beta)
     else:

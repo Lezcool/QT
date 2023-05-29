@@ -1,6 +1,6 @@
 source /zhome/dc/1/174181/docs/QT/venvQT/bin/activate
 data='/zhome/dc/1/174181/docs/QT/data'
-save_path='/zhome/dc/1/174181/docs/QT/results'
+save_path='/zhome/dc/1/174181/docs/QT/results/vote(smmra)'
 pyfile=/zhome/dc/1/174181/docs/QT/code/test.py
 setting='/zhome/dc/1/174181/docs/QT/code/setting.yml'
 # python3 /zhome/dc/1/174181/docs/QT/code/test.py --method 'vote' --maperiod 10
