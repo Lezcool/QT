@@ -260,10 +260,10 @@ class myStrategy(bt.Strategy):
             action4 = self.macd_ind()
             if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}, MACD: {action4}')
             #count the number of buy and sell and hold
-            buy_n, sell_n, hold_n = [[action1,action2, action3,action4].count(i) for i in ['buy','sell','hold']]
-            if buy_n > sell_n and buy_n > hold_n:
+            buy_n, sell_n, hold_n = [[action1,action2,action4].count(i) for i in ['buy','sell','hold']]
+            if buy_n >= 2:
                 return 'buy'
-            elif sell_n > buy_n and sell_n > hold_n:
+            elif sell_n >= 2:
                 return 'sell'
             else:
                 return 'hold'
