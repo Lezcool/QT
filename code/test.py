@@ -150,7 +150,9 @@ class myStrategy(bt.Strategy):
         self.rsi= bt.indicators.RSI_Safe(self.datas[0],period=14)
         # Add a MACD indicator
         self.macd = bt.indicators.MACDHisto(self.datas[0],period_me1=12,period_me2=26,period_signal=9)
-        
+        # Add a Stochastic indicator
+        self.stoch = bt.indicators.Stochastic(self.datas[0],period=14,period_dfast=3,period_dslow=3)
+
         # recode values
         self.beta = self.params.beta
         self.highest = self.broker.get_cash()
@@ -243,6 +245,13 @@ class myStrategy(bt.Strategy):
             # 当MACD柱状图从正值变为负值时，产生卖出信号
             return 'sell'
         return 'hold'
+    
+    def kdj_ind(self):
+        if self.stoch.percK[0] > self.stoch.percD[0] and self.stoch.percK[-1] <= self.stoch.percD[-1]:
+            return 'buy'
+        elif self.stoch.percK[0] < self.stoch.percD[0] and self.stoch.percK[-1] >= self.stoch.percD[-1]:
+            return 'sell'
+        return 'hold'
 
     def predict(self):
         if args.method == 'ai':
@@ -253,17 +262,20 @@ class myStrategy(bt.Strategy):
             return self.rsi_ind()
         elif args.method == 'macd':
             return self.macd_ind()
+        elif args.method == 'kdj':
+            return self.kdj_ind()
         elif args.method == 'vote':
             action1 = self.ai_ind()
             action2 = self.sma_ind()
             action3 = self.rsi_ind()
             action4 = self.macd_ind()
-            if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}, MACD: {action4}')
+            action5 = self.kdj_ind()
+            if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}, MACD: {action4}, KDJ: {action5}')
             #count the number of buy and sell and hold
-            buy_n, sell_n, hold_n = [[action1,action2,action4].count(i) for i in ['buy','sell','hold']]
-            if buy_n >= 2:
+            buy_n, sell_n, hold_n = [[action1,action2,action3,action4,action5].count(i) for i in ['buy','sell','hold']]
+            if buy_n >= 3:
                 return 'buy'
-            elif sell_n >= 2:
+            elif sell_n >= 3:
                 return 'sell'
             else:
                 return 'hold'

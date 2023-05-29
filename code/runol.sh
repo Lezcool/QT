@@ -1,6 +1,6 @@
 source /home/lez/Documents/QT/venvQT/bin/activate
 data='/home/lez/Documents/QT/QT/data'
-save_path='/home/lez/Documents/QT/QT/results/vote(asm)'
+save_path='/home/lez/Documents/QT/QT/results/vote(ksrma)'
 #if path doenst exist, create it
 if [ ! -d "$save_path" ]; then
   mkdir $save_path
