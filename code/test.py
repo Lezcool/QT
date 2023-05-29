@@ -247,11 +247,17 @@ class myStrategy(bt.Strategy):
         return 'hold'
     
     def kdj_ind(self):
-        if self.stoch.percK[0] > self.stoch.percD[0] and self.stoch.percK[-1] <= self.stoch.percD[-1]:
-            return 'buy'
-        elif self.stoch.percK[0] < self.stoch.percD[0] and self.stoch.percK[-1] >= self.stoch.percD[-1]:
+        # Stochastic strategy
+        if self.stoch.percK[0] > 80:
             return 'sell'
+        elif self.stoch.percK[0] < 20:
+            return 'buy'
         return 'hold'
+        # if self.stoch.percK[0] > self.stoch.percD[0] and self.stoch.percK[-1] <= self.stoch.percD[-1]:
+        #     return 'buy'
+        # elif self.stoch.percK[0] < self.stoch.percD[0] and self.stoch.percK[-1] >= self.stoch.percD[-1]:
+        #     return 'sell'
+        # return 'hold'
 
     def predict(self):
         if args.method == 'ai':
