@@ -6,4 +6,8 @@
 .gitignore
 *.txt
 *.png
+<<<<<<< HEAD
 code/sendnotify.py
+=======
+code/__pycache__/email.cpython-39.pyc
+>>>>>>> origin/hpc
