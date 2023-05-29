@@ -1,6 +1,6 @@
 source /zhome/dc/1/174181/docs/QT/venvQT/bin/activate
 data='/zhome/dc/1/174181/docs/QT/data'
-save_path='/zhome/dc/1/174181/docs/QT/results/vote(srma_opt)'
+save_path='/zhome/dc/1/174181/docs/QT/results/vote(msa)'
 #if path doenst exist, create it
 if [ ! -d "$save_path" ]; then
   mkdir $save_path

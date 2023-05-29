@@ -5,7 +5,7 @@ import os
 today = datetime.date.today()
 
 
-company = ['NVDA','BABA','BILI','DIDIY','COIN','FFIE','META','SPCE','AAPL','NFLX','PDD','NIO','NET']
+company = ['NVDA','BABA','BILI','DIDIY','COIN','FFIE','META','SPCE','AAPL','NFLX','PDD','NET']
 
 for c in company:
     if c == 'SPCE':
