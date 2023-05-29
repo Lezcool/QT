@@ -18,7 +18,7 @@ from backtrader.analyzers import AnnualReturn
 import yaml
 
 import logging
-import tqdm
+from tqdm import tqdm
 # silence pyfolio warnings
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled=True
@@ -209,67 +209,40 @@ class myStrategy(bt.Strategy):
         forecast = m.make_future_dataframe(periods=30, freq='D')
         pred = m.predict(forecast)
         yhat = pred.yhat.iloc[-1]
-        cash = self.broker.get_cash()
-        stake = self.broker.getposition(self.data).size
         close = self.dataclose[0]
-        
         # print('stake'*10,stake)
         # print(f'{date},{round(cash,2)},yhat:[{round(yhat,2)},buy:{round(1.1*close,2)},sell:{round(0.9*close,2)}], close:{close},{stake}')
         # if yhat 10% higher than dataclose, buy
 
         if yhat > (1+self.beta)*close:
-            amount=int(cash*0.5/close)
-            if amount > 0:
-                return 'buy', amount
+            return 'buy'
         # if yhat 10% lower than dataclose, sell
         elif yhat < (1-self.beta)*close:
-            amount=int(stake*0.5)
-            if stake ==1: amount = 1
-            if amount > 0:
-                return 'sell', amount
-        return 'hold', 0
+            return 'sell'
+        return 'hold'
     
     def sma_ind(self):
-        cash = self.broker.get_cash()
-        stake = self.broker.getposition(self.data).size
-        close = self.dataclose[0]
         if self.dataclose[0] > self.sma[0]:
-            amount=int(cash*0.5/close)
-            return 'buy', amount
+            return 'buy'
         elif self.dataclose[0] < self.sma[0]:
-            amount=int(stake*0.5)
-            if stake ==1: amount = 1
-            return 'sell', amount
-        return 'hold', 0
+            return 'sell'
+        return 'hold'
     
     def rsi_ind(self):
-        cash = self.broker.get_cash()
-        stake = self.broker.getposition(self.data).size
-        close = self.dataclose[0]
-
         if self.rsi > 70:
-            amount=int(stake*0.5)
-            if stake ==1: amount = 1
-            return 'sell', amount
+            return 'sell'
         elif self.rsi< 30:
-            amount=int(cash*0.5/close)
-            return 'buy', amount
-        return 'hold', 0
+            return 'buy'
+        return 'hold'
         
     def macd_ind(self):
-        cash = self.broker.get_cash()
-        stake = self.broker.getposition(self.data).size
-        close = self.dataclose[0]
 
         if self.macd[0] > 0 and self.macd[-1] <= 0:
-            amount=int(cash*0.5/close)
-            return 'buy', amount
+            return 'buy'
         elif self.macd[0] < 0 and self.macd[-1] >= 0:
             # 当MACD柱状图从正值变为负值时，产生卖出信号
-            amount=int(stake*0.5)
-            if stake ==1: amount = 1
-            return 'sell', amount
-        return 'hold', 0
+            return 'sell'
+        return 'hold'
 
     def predict(self):
         if args.method == 'ai':
@@ -281,20 +254,21 @@ class myStrategy(bt.Strategy):
         elif args.method == 'macd':
             return self.macd_ind()
         elif args.method == 'vote':
-            action1, amount1 = self.ai_ind()
-            action2, amount2 = self.sma_ind()
-            action3, amount3 = self.rsi_ind()
-            action4, amount4 = self.macd_ind()
-            # if more than 2 of 3 agree, take action
+            action1 = self.ai_ind()
+            action2 = self.sma_ind()
+            action3 = self.rsi_ind()
+            action4 = self.macd_ind()
             if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}, MACD: {action4}')
-            if [action1,action1,action2, action3,action4].count('buy') >= 3:
-                return 'buy', amount2
-            elif [action1,action1,action2, action3,action4].count('sell') >= 3:
-                return 'sell', amount2
+            #count the number of buy and sell and hold
+            buy_n, sell_n, hold_n = [[action1,action2, action3,action4].count(i) for i in ['buy','sell','hold']]
+            if buy_n > sell_n and buy_n > hold_n:
+                return 'buy'
+            elif sell_n > buy_n and sell_n > hold_n:
+                return 'sell'
             else:
-                return 'hold', 0
+                return 'hold'
         else:
-            return 'hold', 0
+            return 'hold'
 
 
     def next(self):
@@ -309,23 +283,32 @@ class myStrategy(bt.Strategy):
         # print(self.datas[0].datetime.date(0),self.final_date)
         if args.forcast and self.datas[0].datetime.date(0) < self.final_date:
             return
-        action, amount = self.predict()
+        
+        cash = self.broker.get_cash()
+        stake = self.broker.getposition(self.data).size
+        close = self.dataclose[0]
+        buyamount=int(cash*0.5/close)
+        sellamount=int(stake*0.5)
+        if stake ==1: sellamount = 1
+
+        action = self.predict()
 
         if args.forcast: print(f'{self.datas[0].datetime.date(0)} Final Action: {action}')
 
         # Check if we are in the market
         # if not self.position:
         if action == 'buy':
-            
-            self.log('BUY CREATE, %.2f' % self.dataclose[0])
-            # Keep track of the created order to avoid a 2nd order
-            self.order = self.buy(size=amount)
+            if buyamount > 0:
+                self.log('BUY CREATE, %.2f' % self.dataclose[0])
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.buy(size=buyamount)
         # else:
         elif action == 'sell':
-            # SELL, SELL, SELL!!! (with all possible default parameters)
-            self.log('SELL CREATE, %.2f' % self.dataclose[0])
-            # Keep track of the created order to avoid a 2nd order
-            self.order = self.sell(size=amount)
+            if sellamount > 0:
+                # SELL, SELL, SELL!!! (with all possible default parameters)
+                self.log('SELL CREATE, %.2f' % self.dataclose[0])
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.sell(size=sellamount)
 
         # record highest and lowest portfolio value
         self.highest = max(self.highest, self.broker.getvalue())
@@ -388,7 +371,7 @@ def main(args):
         if args.method == 'sma':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31))
         elif args.method == 'ai':
-            strats = cerebro.optstrategy(myStrategy, beta=[0.05,0.1,0.15,0.2,0.25,0.3])
+            strats = cerebro.optstrategy(myStrategy, beta=[0.05])
         elif args.method =='vote':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31,2), beta=args.beta)
     else:
