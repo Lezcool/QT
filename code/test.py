@@ -18,6 +18,7 @@ from backtrader.analyzers import AnnualReturn
 import yaml
 
 import logging
+import tqdm
 # silence pyfolio warnings
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled=True
@@ -283,12 +284,12 @@ class myStrategy(bt.Strategy):
             action1, amount1 = self.ai_ind()
             action2, amount2 = self.sma_ind()
             action3, amount3 = self.rsi_ind()
-            # action4, amount4 = self.macd_ind()
+            action4, amount4 = self.macd_ind()
             # if more than 2 of 3 agree, take action
             if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}')
-            if [action1,action2, action3].count('buy') >= 2:
+            if [action1,action1,action2, action3,action4].count('buy') >= 3:
                 return 'buy', amount2
-            elif [action1,action2, action3].count('sell') >= 2:
+            elif [action1,action1,action2, action3,action4].count('sell') >= 3:
                 return 'sell', amount2
             else:
                 return 'hold', 0
@@ -443,12 +444,12 @@ if __name__ == '__main__':
 
     if args.folder_mode:
         folder = args.data
-        for file in os.listdir(folder):
+        for file in tqdm(os.listdir(folder)):
             if file.endswith('.csv'):
                 name = file.split('.')[0]
                 args.maperiod = params[name]
                 args.data = os.path.join(folder,file)
-                print('*'*10,file,'*'*10)
+                print('*'*10,name,'*'*10)
                 main(args)
 
     else:

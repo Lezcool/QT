@@ -6,3 +6,4 @@
 .gitignore
 *.txt
 *.png
+code/__pycache__/email.cpython-39.pyc
