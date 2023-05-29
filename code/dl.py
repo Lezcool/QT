@@ -15,4 +15,4 @@ for c in company:
     else:
         fromdate = '2017-01-01'
     df = yf.download(c, start=fromdate, end=today)
-    df.to_csv(os.path.join('/home/ec2-user/aria2-downloads/backtrader/QT/data',f'{c}.csv'))
+    df.to_csv(os.path.join('/home/lez/Documents/QT/QT/data',f'{c}.csv'))

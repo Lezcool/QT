@@ -430,7 +430,10 @@ if __name__ == '__main__':
         for file in tqdm(os.listdir(folder)):
             if file.endswith('.csv'):
                 name = file.split('.')[0]
-                args.maperiod = params[name]
+                try:
+                    args.maperiod = params[name]
+                except:
+                    args.maperiod = 20
                 args.data = os.path.join(folder,file)
                 print('*'*10,name,'*'*10)
                 main(args)
