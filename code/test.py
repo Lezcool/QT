@@ -279,10 +279,11 @@ class myStrategy(bt.Strategy):
             action5 = self.kdj_ind()
             if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action1}, SMA+: {action2}, RSI-: {action3}, MACD+: {action4}, KDJ-: {action5}')
             #count the number of buy and sell and hold
-            buy_n, sell_n, hold_n = [[action1,action2,action3,action4,action5].count(i) for i in ['buy','sell','hold']]
-            if buy_n >= 3:
+            # msa performs best
+            buy_n, sell_n, hold_n = [[action1,action2,action4].count(i) for i in ['buy','sell','hold']]
+            if buy_n >= 2:
                 return 'buy'
-            elif sell_n >= 3:
+            elif sell_n >= 2:
                 return 'sell'
             else:
                 return 'hold'
