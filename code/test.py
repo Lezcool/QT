@@ -16,6 +16,7 @@ from backtrader import Analyzer, TimeFrame
 from backtrader.mathsupport import average, standarddev
 from backtrader.analyzers import AnnualReturn
 import yaml
+import yfinance as yf
 
 import logging
 from tqdm import tqdm
@@ -276,7 +277,7 @@ class myStrategy(bt.Strategy):
             action3 = self.rsi_ind()
             action4 = self.macd_ind()
             action5 = self.kdj_ind()
-            if args.forcast: print(f'AI: {action1}, SMA {action2}, RSI: {action3}, MACD: {action4}, KDJ: {action5}')
+            if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action1}, SMA+: {action2}, RSI-: {action3}, MACD+: {action4}, KDJ-: {action5}')
             #count the number of buy and sell and hold
             buy_n, sell_n, hold_n = [[action1,action2,action3,action4,action5].count(i) for i in ['buy','sell','hold']]
             if buy_n >= 3:
@@ -375,10 +376,32 @@ def get_ts(df):
     ts['ds'] = pd.to_datetime(ts['ds'])
     return ts
 
+def get_realtime_data(c,df):
+    '''
+    c: company name
+    df: original dataframe
+    '''
+    try:
+        today = datetime.date.today()
+        price = yf.Ticker(c).info['bid']
+        add_dict = {'Date':pd.to_datetime(today),'Close':price}
+        tmp = pd.DataFrame(add_dict,index=[0])
+        tmp.set_index('Date',inplace=True)
+        df = pd.concat([df,tmp],axis=0)
+        df.fillna(method='ffill',inplace=True)
+    except:
+        print(f'{c} No realtime data')
+    return df
+
 def main(args):
+    datapath = args.data
+    filename = os.path.basename(datapath).split('.')[0]
     # Create a cerebro entity
     cerebro = bt.Cerebro()
-    df = pd.read_csv(args.data,index_col=0)
+    df = pd.read_csv(args.data,index_col=0,parse_dates=True)
+    if args.forcast:
+        df = get_realtime_data(filename,df)
+
     ts = get_ts(df)
     sp = int(0.5*(len(ts)))
     fromdate,todate = ts.ds.iloc[sp], ts.ds.iloc[-1]
@@ -397,18 +420,18 @@ def main(args):
     # 
     # modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
     # datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
-    datapath = args.data
-    filename = os.path.basename(datapath).split('.')[0]
+    
     # Create a Data Feed
-    data = bt.feeds.YahooFinanceCSVData(
-        dataname=datapath,
-        # Do not pass values before this date
-        fromdate=fromdate,
-        # Do not pass values before this date
-        todate=todate,
-        # Do not pass values after this date
-        reverse=False)
+    # data = bt.feeds.YahooFinanceCSVData(
+    #     dataname=datapath,
+    #     # Do not pass values before this date
+    #     fromdate=fromdate,
+    #     # Do not pass values before this date
+    #     todate=todate,
+    #     # Do not pass values after this date
+    #     reverse=False)
 
+    data = bt.feeds.PandasData(dataname=df)
     # Add the Data Feed to Cerebro
     cerebro.adddata(data)
 
@@ -434,9 +457,10 @@ def main(args):
 if __name__ == '__main__':
     args = parse_args()
     # create new csv file
-    with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'w') as f:
-        f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio\n')
-    f.close()
+    if not args.forcast:
+        with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'w') as f:
+            f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio\n')
+        f.close()
 
     file = args.config
     with open(file) as file:
@@ -445,7 +469,7 @@ if __name__ == '__main__':
 
     if args.folder_mode:
         folder = args.data
-        for file in tqdm(os.listdir(folder)):
+        for file in (os.listdir(folder)):
             if file.endswith('.csv'):
                 name = file.split('.')[0]
                 try:
