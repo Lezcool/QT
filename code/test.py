@@ -8,7 +8,7 @@ import sys
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
-import backtrader.analyzers as btanalyzers
+# import backtrader.analyzers as btanalyzers
 import operator
 
 from backtrader.utils.py3 import map
@@ -123,6 +123,9 @@ class myStrategy(bt.Strategy):
         ('printlog', False),
         ('args', None),
         ('beta',0.05), #
+        ('n', 9),       # MACD快线的周期
+        ('m', 5),       # 平仓时的K线数量
+        ('atr_multiplier', 0.5)    # 最高/低价与ATR的乘数
     )
     def log(self, txt, dt=None, doprint=False):
         ''' Logging function fot this strategy'''
@@ -153,6 +156,10 @@ class myStrategy(bt.Strategy):
         self.macd = bt.indicators.MACDHisto(self.datas[0],period_me1=12,period_me2=26,period_signal=9)
         # Add a Stochastic indicator
         self.stoch = bt.indicators.Stochastic(self.datas[0],period=14,period_dfast=3,period_dslow=3)
+        # Add a TrendModel
+        self.atr = bt.indicators.ATR(self.data)
+        self.highs = bt.indicators.Highest(self.data.high, period=self.params.n)
+        self.lows = bt.indicators.Lowest(self.data.low, period=self.params.n)
 
         # recode values
         self.beta = self.params.beta
@@ -260,6 +267,17 @@ class myStrategy(bt.Strategy):
         #     return 'sell'
         # return 'hold'
 
+    def TrendModel_ind(self):
+        if self.macd.macd[0] > self.macd.signal[0] and self.macd.macd[-1] <= self.macd.signal[-1]:
+            if self.data.close[0] > (self.highs[-1] + self.params.atr_multiplier * self.atr[-1]):
+                return 'buy'
+        
+        if self.macd.macd[0] < self.macd.signal[0] and self.macd.macd[-1] >= self.macd.signal[-1]:
+            if self.data.close[0] < (self.lows[-1] - self.params.atr_multiplier * self.atr[-1]):
+                return 'sell'
+            
+        return 'hold'
+
     def predict(self):
         if args.method == 'ai':
             return self.ai_ind()
@@ -271,16 +289,19 @@ class myStrategy(bt.Strategy):
             return self.macd_ind()
         elif args.method == 'kdj':
             return self.kdj_ind()
+        elif args.method == 'trend':
+            return self.TrendModel_ind()
         elif args.method == 'vote':
             action1 = self.ai_ind()
             action2 = self.sma_ind()
             action3 = self.rsi_ind()
             action4 = self.macd_ind()
             action5 = self.kdj_ind()
-            if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action1}, SMA+: {action2}, RSI-: {action3}, MACD+: {action4}, KDJ-: {action5}')
+            action6 = self.TrendModel_ind()
+            if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action1}, SMA+: {action2}, Trend+: {action6}, MACD+: {action4}, KDJ-: {action5}')
             #count the number of buy and sell and hold
             # msa performs best
-            buy_n, sell_n, hold_n = [[action1,action2,action4].count(i) for i in ['buy','sell','hold']]
+            buy_n, sell_n, hold_n = [[action1,action2,action4,action6].count(i) for i in ['buy','sell','hold']]
             if buy_n >= 2:
                 return 'buy'
             elif sell_n >= 2:
@@ -336,15 +357,23 @@ class myStrategy(bt.Strategy):
 
     def stop(self):
         if args.forcast: return
-        self.analyzers.mysharpe.stop()
-        sharpe_ratio = self.analyzers.mysharpe.get_analysis()['sharperatio']
+        # try:
+        # # self.analyzers.returns.stop()
+        # self.analyzers.vwr.stop()
+        # sharpe_ratio = self.analyzers.vwr.get_analysis()['vwr']
+        # self.analyzers.mycalmar.stop()
+        # except:
+        #     print('error of vwr')
+        self.analyzers.sharperatio_a.stop()
+        sharpe_ratio = self.analyzers.sharperatio_a.get_analysis()['sharperatio']
+        calmar = self.analyzers.mycalmar.calmar
         if sharpe_ratio is None: sharpe_ratio = 0
-        self.log('(MA Period %2d) (beta %2f) Ending Value %.2f Highest %.2f Lowest %.2f Sharp ratio %.2f' %
-                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio), doprint=True)
+        self.log('(MA Period %2d) (beta %2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f Calmar %.2f' %
+                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,calmar), doprint=True)
         
         # append results to csv file
         with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'a') as f:
-            f.write(f'{self.company},{self.params.maperiod},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio}\n')
+            f.write(f'{self.company},{self.params.maperiod},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio},{calmar}\n')
         f.close()
         
     
@@ -372,6 +401,9 @@ def parse_args():
 
 
 def get_ts(df):
+    '''
+    get df for training prophet
+    '''
     ts = df.reset_index()[['Date', 'Close']]
     ts.columns = ['ds', 'y']
     ts['ds'] = pd.to_datetime(ts['ds'])
@@ -432,7 +464,7 @@ def main(args):
     #     # Do not pass values after this date
     #     reverse=False)
 
-    data = bt.feeds.PandasData(dataname=df)
+    data = bt.feeds.PandasData(dataname=df,fromdate=fromdate,todate=todate)
     # Add the Data Feed to Cerebro
     cerebro.adddata(data)
 
@@ -445,7 +477,17 @@ def main(args):
     # Set the commission
     cerebro.broker.setcommission(commission=0.001)
 
-    cerebro.addanalyzer(btanalyzers.SharpeRatio, _name='mysharpe')
+    #############vwr
+    # cerebro.addanalyzer(bt.analyzers.Returns)  # Returns
+    # cerebro.addanalyzer(bt.analyzers.SQN)  # VWR Analyzer
+    cerebro.addanalyzer(bt.analyzers.SharpeRatio_A)  # VWR Analyzer
+    cerebro.addanalyzer(bt.analyzers.VWR)  # VWR Analyzer
+    # cerebro.addanalyzer(bt.analyzers.TimeReturn,
+    #                     timeframe=bt.TimeFrame.Months)
+    # cerebro.addanalyzer(bt.analyzers.TimeReturn,
+    #                     timeframe=bt.TimeFrame.Years)
+    ###############
+    cerebro.addanalyzer(bt.analyzers.Calmar,_name='mycalmar')
 
     # Run over everything
     cerebro.run()
@@ -460,7 +502,7 @@ if __name__ == '__main__':
     # create new csv file
     if not args.forcast:
         with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'w') as f:
-            f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio\n')
+            f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio,calmar\n')
         f.close()
 
     file = args.config
