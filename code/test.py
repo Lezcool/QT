@@ -365,8 +365,8 @@ class myStrategy(bt.Strategy):
         calmar = self.analyzers.mycalmar.calmar
         maxdrawndown = self.analyzers.mydrawdown.get_analysis()['max']['drawdown']
         if sharpe_ratio is None: sharpe_ratio = 0
-        self.log('(MA Period %2d) (beta %.2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f max drawndown %.2f Calmar %.2f' %
-                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,maxdrawndown,calmar), doprint=True)
+        self.log('(beta %.2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f max drawndown %.2f Calmar %.2f' %
+                 (self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,maxdrawndown,calmar), doprint=True)
         
         # append results to csv file
         with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'a') as f:
@@ -447,7 +447,7 @@ def main(args):
         elif args.method =='vote':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31,2), beta=args.beta)
     else:
-        cerebro.addstrategy(myStrategy,maperiod=args.maperiod,beta=args.beta)
+        cerebro.addstrategy(myStrategy,beta=args.beta)
     # 
     # modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
     # datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
