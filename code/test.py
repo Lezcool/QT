@@ -328,6 +328,10 @@ class myStrategy(bt.Strategy):
         cash = self.broker.get_cash()
         stake = self.broker.getposition(self.data).size
         close = self.dataclose[0]
+        if close ==0: 
+            close=1
+            print('Error close price is 0')
+            return
         buyamount=int(cash*0.5/close)
         sellamount=int(stake*0.5)
         if stake ==1: sellamount = 1
