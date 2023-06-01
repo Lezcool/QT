@@ -23,74 +23,6 @@ from tqdm import tqdm
 # silence pyfolio warnings
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled=True
-class TestStrategy(bt.Strategy):
-
-    def log(self, txt, dt=None):
-        ''' Logging function fot this strategy'''
-        dt = dt or self.datas[0].datetime.date(0)
-        print('%s, %s' % (dt.isoformat(), txt))
-
-    def __init__(self):
-        # Keep a reference to the "close" line in the data[0] dataseries
-        self.dataclose = self.datas[0].close
-
-        # To keep track of pending orders
-        self.order = None
-
-    def notify_order(self, order):
-        if order.status in [order.Submitted, order.Accepted]:
-            # Buy/Sell order submitted/accepted to/by broker - Nothing to do
-            return
-
-        # Check if an order has been completed
-        # Attention: broker could reject order if not enough cash
-        if order.status in [order.Completed]:
-            if order.isbuy():
-                self.log('BUY EXECUTED, %.2f' % order.executed.price)
-            elif order.issell():
-                self.log('SELL EXECUTED, %.2f' % order.executed.price)
-
-            self.bar_executed = len(self)
-
-        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            self.log('Order Canceled/Margin/Rejected')
-
-        # Write down: no pending order
-        self.order = None
-
-    def next(self):
-        # Simply log the closing price of the series from the reference
-        self.log('Close, %.2f' % self.dataclose[0])
-
-        # Check if an order is pending ... if yes, we cannot send a 2nd one
-        if self.order:
-            return
-
-        # Check if we are in the market
-        if not self.position:
-
-            # Not yet ... we MIGHT BUY if ...
-            if self.dataclose[0] < self.dataclose[-1]:
-                    # current close less than previous close
-
-                    if self.dataclose[-1] < self.dataclose[-2]:
-                        # previous close less than the previous close
-
-                        # BUY, BUY, BUY!!! (with default parameters)
-                        self.log('BUY CREATE, %.2f' % self.dataclose[0])
-
-                        # Keep track of the created order to avoid a 2nd order
-                        self.order = self.buy()
-
-        else:
-
-            # Already in the market ... we might sell
-            if len(self) >= (self.bar_executed + 5):
-                # SELL, SELL, SELL!!! (with all possible default parameters)
-                self.log('SELL CREATE, %.2f' % self.dataclose[0])
-
-                # Keep track of the created order to avoid a 2nd order
-                self.order = self.sell()
 
 class SharpeRatio(Analyzer):
     params = (('timeframe', TimeFrame.Years), ('riskfreerate', 0.01),)
@@ -122,10 +54,11 @@ class myStrategy(bt.Strategy):
         ('maperiod', 15),
         ('printlog', False),
         ('args', None),
-        ('beta',0.05), #
+        ('beta',0.2), #
         ('n', 9),       # MACD快线的周期
         ('m', 5),       # 平仓时的K线数量
-        ('atr_multiplier', 0.5)    # 最高/低价与ATR的乘数
+        ('atr_multiplier', 0.5),    # 最高/低价与ATR的乘数
+        ('whichyhat','yhat'),
     )
     def log(self, txt, dt=None, doprint=False):
         ''' Logging function fot this strategy'''
@@ -136,10 +69,20 @@ class myStrategy(bt.Strategy):
     def __init__(self):
         # Keep a reference to the "close" line in the data[0] dataseries
         self.dataclose = self.datas[0].close
+        self.company = os.path.basename(args.data).split('.')[0]
         
         df = pd.read_csv(args.data,index_col=0)
         self.ts = get_ts(df)
-
+        try:
+            self.ai_df = pd.read_csv(os.path.join(os.path.dirname(args.data),f'ai/{self.company}.csv'),parse_dates=True,header=None)
+            self.ai_df.columns = ['date','yhat','yhat_lower','yhat_upper']
+            self.ai_df.set_index('date',inplace=True)
+            self.ai_df.index = pd.to_datetime(self.ai_df.index)
+            #del duplicate rows
+            self.ai_df = self.ai_df[~self.ai_df.index.duplicated(keep='first')]
+        except:
+            print('No AI data found')
+            self.ai_df = None
         #get final date in the data
         self.final_date = self.datas[0].datetime.date(0)
 
@@ -150,6 +93,7 @@ class myStrategy(bt.Strategy):
 
         # Add a MovingAverageSimple indicator
         self.sma = bt.indicators.SimpleMovingAverage(self.datas[0], period=self.params.maperiod)
+
         # Add a RSI indicator
         self.rsi= bt.indicators.RSI_Safe(self.datas[0],period=14)
         # Add a MACD indicator
@@ -165,11 +109,8 @@ class myStrategy(bt.Strategy):
         self.beta = self.params.beta
         self.highest = self.broker.get_cash()
         self.lowest = self.broker.get_cash()
-
-        self.company = os.path.basename(args.data).split('.')[0]
-
-        
-
+        self.sellcriteria = self.broker.get_cash()
+        self.whichyhat = self.params.whichyhat
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
@@ -213,23 +154,56 @@ class myStrategy(bt.Strategy):
         #get current date
         date = self.datas[0].datetime.date(0)
         date = pd.to_datetime(date)
-        train = self.ts.loc[self.ts.ds < date]
-
-        m = Prophet(daily_seasonality=True, yearly_seasonality=True).fit(train)
-        forecast = m.make_future_dataframe(periods=30, freq='D')
-        pred = m.predict(forecast)
-        yhat = pred.yhat.iloc[-1]
         close = self.dataclose[0]
-        # print('stake'*10,stake)
-        # print(f'{date},{round(cash,2)},yhat:[{round(yhat,2)},buy:{round(1.1*close,2)},sell:{round(0.9*close,2)}], close:{close},{stake}')
-        # if yhat 10% higher than dataclose, buy
+        def calc_ai_y(date):
+            train = self.ts.loc[self.ts.ds < date]
+            m = Prophet(daily_seasonality=True, yearly_seasonality=True).fit(train)
+            forecast = m.make_future_dataframe(periods=30, freq='D')
+            pred = m.predict(forecast)
+            yhat = pred.yhat.iloc[-1]
+            yhat_lower = pred.yhat_lower.iloc[-1]
+            yhat_upper = pred.yhat_upper.iloc[-1]
+            
+            # print('stake'*10,stake)
+            # print(f'{date},{round(cash,2)},yhat:[{round(yhat,2)},buy:{round(1.1*close,2)},sell:{round(0.9*close,2)}], close:{close},{stake}')
+            # if yhat 10% higher than dataclose, buy
 
-        if yhat > (1+self.beta)*close:
-            return 'buy'
+            with open(f'/home/lez/Documents/QT/QT/data/ai/{self.company}.csv','a') as f:
+                f.write(f'{date},{yhat},{yhat_lower},{yhat_upper} \n')
+            f.close()
+            return yhat,yhat_lower,yhat_upper
+
+        if self.ai_df is not None:
+            try:
+                date = pd.to_datetime(date)
+                # print(date)
+                # print(self.ai_df.loc[date,'yhat_upper'])
+                yhat,yhat_lower,yhat_upper = self.ai_df.loc[date,'yhat'],self.ai_df.loc[date,'yhat_lower'],self.ai_df.loc[date,'yhat_upper']
+                if isinstance(yhat,pd.core.series.Series): 
+                    print('y_hat more than 1')
+                    sys.exit()
+            except:
+                print(f'fail to to find {date}')
+                yhat,yhat_lower,yhat_upper = calc_ai_y(date)
+        else:
+            yhat,yhat_lower,yhat_upper = calc_ai_y(date)
+        # print(len(yhat))
+        if self.whichyhat == 'yhat':
+            y = yhat
+        elif self.whichyhat == 'yhat_lower':
+            y = yhat_lower
+        elif self.whichyhat == 'yhat_upper':
+            y = yhat_upper
+        
+        if y > (1+self.beta)*close:
+            action = 'buy'           
         # if yhat 10% lower than dataclose, sell
-        elif yhat < (1-self.beta)*close:
-            return 'sell'
-        return 'hold'
+        elif y < (1-self.beta)*close:
+            action = 'sell'
+        else:
+            action = 'hold'
+
+        return action
     
     def sma_ind(self):
         if self.dataclose[0] > self.sma[0]:
@@ -277,6 +251,7 @@ class myStrategy(bt.Strategy):
                 return 'sell'
             
         return 'hold'
+    
 
     def predict(self):
         if args.method == 'ai':
@@ -301,13 +276,16 @@ class myStrategy(bt.Strategy):
             if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action1}, SMA+: {action2}, Trend+: {action6}, MACD+: {action4}, KDJ-: {action5}')
             #count the number of buy and sell and hold
             # msa performs best
-            buy_n, sell_n, hold_n = [[action1,action2,action4,action6].count(i) for i in ['buy','sell','hold']]
-            if buy_n >= 2:
-                return 'buy'
-            elif sell_n >= 2:
-                return 'sell'
+            if action6 != 'hold':
+                return action6
             else:
-                return 'hold'
+                buy_n, sell_n, hold_n = [[action1,action2,action4].count(i) for i in ['buy','sell','hold']]
+                if buy_n >= 2:
+                    return 'buy'
+                elif sell_n >= 2:
+                    return 'sell'
+                else:
+                    return 'hold'
         else:
             return 'hold'
 
@@ -339,6 +317,13 @@ class myStrategy(bt.Strategy):
         action = self.predict()
 
         if args.forcast: print(f'{self.datas[0].datetime.date(0)} Final Action: {action}')
+        
+        #sell if current drawdown is more than 20%
+        if args.drawdown and self.broker.getvalue() < self.sellcriteria*0.8 and stake > 0:
+            self.sellcriteria = self.broker.getvalue()
+            # print(f'{self.datas[0].datetime.date(0)} Sell Criteria: {self.sellcriteria}')
+            action = 'sell'
+            sellamount = stake
 
         # Check if we are in the market
         # if not self.position:
@@ -358,6 +343,7 @@ class myStrategy(bt.Strategy):
         # record highest and lowest portfolio value
         self.highest = max(self.highest, self.broker.getvalue())
         self.lowest = min(self.lowest, self.broker.getvalue())
+        self.sellcriteria = max(self.sellcriteria, self.broker.getvalue())
 
     def stop(self):
         if args.forcast: return
@@ -371,13 +357,14 @@ class myStrategy(bt.Strategy):
         self.analyzers.sharperatio_a.stop()
         sharpe_ratio = self.analyzers.sharperatio_a.get_analysis()['sharperatio']
         calmar = self.analyzers.mycalmar.calmar
+        maxdrawndown = self.analyzers.mydrawdown.get_analysis()['max']['drawdown']
         if sharpe_ratio is None: sharpe_ratio = 0
-        self.log('(MA Period %2d) (beta %2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f Calmar %.2f' %
-                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,calmar), doprint=True)
+        self.log('(MA Period %2d) (beta %.2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f max drawndown %.2f Calmar %.2f' %
+                 (self.params.maperiod, self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,maxdrawndown,calmar), doprint=True)
         
         # append results to csv file
         with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'a') as f:
-            f.write(f'{self.company},{self.params.maperiod},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio},{calmar}\n')
+            f.write(f'{self.company},{self.params.whichyhat},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio},{maxdrawndown},{calmar}\n')
         f.close()
         
     
@@ -394,12 +381,13 @@ def parse_args():
     parser.add_argument('--method', default='ai',help='ai, sma, rsi')
     parser.add_argument('--maperiod',type=int, default=10,help='sma period')
     parser.add_argument('--optimize',action='store_true' ,default=False,help='optimize sma')
-    parser.add_argument('--beta',type=float, default=0.05 ,help='higher than beta %, buy')
+    parser.add_argument('--beta',type=float, default=0.2 ,help='higher than beta %, buy')
     parser.add_argument('--folder_mode',action='store_true' ,default=False,help='run data set in folder')
     parser.add_argument('--plot',action='store_true' ,default=False,help='plot')
     parser.add_argument('--config',default='/zhome/dc/1/174181/docs/QT/code/setting.yml',help='maperiod config')
     parser.add_argument('--save_path',default='/zhome/dc/1/174181/docs/QT/results',help='save path')
     parser.add_argument('--forcast',action='store_true' ,default=False,help='forcast today')
+    parser.add_argument('--drawdown',action='store_true' ,default=False,help='sell if drawdown')
 
     return parser.parse_args()
 
@@ -449,7 +437,7 @@ def main(args):
         if args.method == 'sma':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31))
         elif args.method == 'ai':
-            strats = cerebro.optstrategy(myStrategy, beta=[0.05])
+            strats = cerebro.optstrategy(myStrategy, beta=[0.05,0.1,0.15,0.2,0.25,0.3])
         elif args.method =='vote':
             strats = cerebro.optstrategy(myStrategy, maperiod=range(10, 31,2), beta=args.beta)
     else:
@@ -492,6 +480,8 @@ def main(args):
     #                     timeframe=bt.TimeFrame.Years)
     ###############
     cerebro.addanalyzer(bt.analyzers.Calmar,_name='mycalmar')
+    # add drawdown
+    cerebro.addanalyzer(bt.analyzers.DrawDown,_name='mydrawdown')
 
     # Run over everything
     cerebro.run()
@@ -506,7 +496,7 @@ if __name__ == '__main__':
     # create new csv file
     if not args.forcast:
         with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'w') as f:
-            f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio,calmar\n')
+            f.write('company,maperiod,beta,ending value,highest,lowest,sharp_ratio,max_drawndown,calmar\n')
         f.close()
 
     file = args.config
