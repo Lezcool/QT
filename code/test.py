@@ -51,7 +51,8 @@ class SharpeRatio(Analyzer):
 
 class myStrategy(bt.Strategy):
     params = (
-        ('maperiod', 15),
+        ('sma_period_short', 10),  # 较短SMA的计算周期
+        ('sma_period_long', 20),
         ('printlog', False),
         ('args', None),
         ('beta',0.2), #
@@ -92,7 +93,8 @@ class myStrategy(bt.Strategy):
         self.buycomm = None
 
         # Add a MovingAverageSimple indicator
-        self.sma = bt.indicators.SimpleMovingAverage(self.datas[0], period=self.params.maperiod)
+        self.sma_short = bt.indicators.SimpleMovingAverage(self.data, period=self.params.sma_period_short)
+        self.sma_long = bt.indicators.SimpleMovingAverage(self.data, period=self.params.sma_period_long)
 
         # Add a RSI indicator
         self.rsi= bt.indicators.RSI_Safe(self.datas[0],period=14)
@@ -167,13 +169,16 @@ class myStrategy(bt.Strategy):
             # print('stake'*10,stake)
             # print(f'{date},{round(cash,2)},yhat:[{round(yhat,2)},buy:{round(1.1*close,2)},sell:{round(0.9*close,2)}], close:{close},{stake}')
             # if yhat 10% higher than dataclose, buy
-
-            with open(f'/home/lez/Documents/QT/QT/data/ai/{self.company}.csv','a') as f:
-                f.write(f'{date},{yhat},{yhat_lower},{yhat_upper} \n')
-            f.close()
+            if not args.forcast:
+                with open(f'{args.data}/ai/{self.company}.csv','a') as f:
+                    f.write(f'{date},{yhat},{yhat_lower},{yhat_upper} \n')
+                f.close()
+                
             return yhat,yhat_lower,yhat_upper
 
-        if self.ai_df is not None:
+        if self.ai_df is None or args.forcast:
+            yhat,yhat_lower,yhat_upper = calc_ai_y(date)
+        else:
             try:
                 date = pd.to_datetime(date)
                 # print(date)
@@ -185,8 +190,7 @@ class myStrategy(bt.Strategy):
             except:
                 print(f'fail to to find {date}')
                 yhat,yhat_lower,yhat_upper = calc_ai_y(date)
-        else:
-            yhat,yhat_lower,yhat_upper = calc_ai_y(date)
+            
         # print(len(yhat))
         if self.whichyhat == 'yhat':
             y = yhat
@@ -206,9 +210,11 @@ class myStrategy(bt.Strategy):
         return action
     
     def sma_ind(self):
-        if self.dataclose[0] > self.sma[0]:
+        if self.sma_short[0] > self.sma_long[0] and self.sma_short[-1] <= self.sma_long[-1]:
+            # 短期SMA上穿长期SMA，产生买入信号
             return 'buy'
-        elif self.dataclose[0] < self.sma[0]:
+        elif self.sma_short[0] < self.sma_long[0] and self.sma_short[-1] >= self.sma_long[-1]:
+            # 短期SMA下穿长期SMA，产生卖出信号
             return 'sell'
         return 'hold'
     
