@@ -1,6 +1,6 @@
 source /home/lez/Documents/QT/venvQT/bin/activate
 data='/home/lez/Documents/QT/QT/data'
-save_path='/home/lez/Documents/QT/QT/results/trend'
+save_path='/home/lez/Documents/QT/QT/results/drawdown/asmt(2)'
 #if path doenst exist, create it
 if [ ! -d "$save_path" ]; then
   mkdir $save_path
@@ -15,8 +15,9 @@ setting='/home/lez/Documents/QT/QT/code/setting.yml'
 
 # python3 /zhome/dc/1/174181/docs/QT/code/test.py --method 'sma' --optimize --folder_mode --data '/zhome/dc/1/174181/docs/QT/data' > /zhome/dc/1/174181/docs/QT/results/sma_results.txt
 
-method='trend'
-python3 $pyfile --method $method --folder_mode --data $data --save_path $save_path --plot --config $setting > $save_path/$method.txt
+method='vote'
+python3 $pyfile --method $method --folder_mode --data $data --save_path $save_path --drawdown --plot --config $setting > $save_path/$method.txt
+# python3 $pyfile --method $method --optimize --folder_mode --data $data --save_path $save_path --config $setting > $save_path/opt_$method.txt
 
 # below is for forcast
 # method='vote'
