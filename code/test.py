@@ -168,10 +168,11 @@ class myStrategy(bt.Strategy):
             
             # print('stake'*10,stake)
             # print(f'{date},{round(cash,2)},yhat:[{round(yhat,2)},buy:{round(1.1*close,2)},sell:{round(0.9*close,2)}], close:{close},{stake}')
-            # if yhat 10% higher than dataclose, buy
-            if not args.forcast:
+
+            # recode values if on forcast mode and not last day of data
+            if (self.params.forcast == True and date < self.final_date) or self.params.forcast == False:
                 with open(f'{args.data}/ai/{self.company}.csv','a') as f:
-                    f.write(f'{date},{yhat},{yhat_lower},{yhat_upper} \n')
+                        f.write(f'{date},{yhat},{yhat_lower},{yhat_upper} \n')
                 f.close()
                 
             return yhat,yhat_lower,yhat_upper
@@ -306,8 +307,8 @@ class myStrategy(bt.Strategy):
         
         #skip if is not final date
         # print(self.datas[0].datetime.date(0),self.final_date)
-        if args.forcast and self.datas[0].datetime.date(0) < self.final_date:
-            return
+        # if args.forcast and self.datas[0].datetime.date(0) < self.final_date:
+        #     return
         
         cash = self.broker.get_cash()
         stake = self.broker.getposition(self.data).size
@@ -330,21 +331,20 @@ class myStrategy(bt.Strategy):
             # print(f'{self.datas[0].datetime.date(0)} Sell Criteria: {self.sellcriteria}')
             action = 'sell'
             sellamount = stake
+            if self.datas[0].datetime.date(0) == self.final_date and args.forcast:
+                print(f'{self.datas[0].datetime.date(0)} Sell due to drawdown: {self.broker.getvalue()}')
 
         # Check if we are in the market
         # if not self.position:
-        if action == 'buy':
-            if buyamount > 0:
-                self.log('BUY CREATE, %.2f' % self.dataclose[0])
-                # Keep track of the created order to avoid a 2nd order
-                self.order = self.buy(size=buyamount)
+        if action == 'buy' and buyamount > 0:
+            self.log('BUY CREATE, %.2f' % self.dataclose[0])
+            # Keep track of the created order to avoid a 2nd order
+            self.order = self.buy(size=buyamount)
         # else:
-        elif action == 'sell':
-            if sellamount > 0:
-                # SELL, SELL, SELL!!! (with all possible default parameters)
-                self.log('SELL CREATE, %.2f' % self.dataclose[0])
-                # Keep track of the created order to avoid a 2nd order
-                self.order = self.sell(size=sellamount)
+        elif action == 'sell' and sellamount > 0:
+            self.log('SELL CREATE, %.2f' % self.dataclose[0])
+            # Keep track of the created order to avoid a 2nd order
+            self.order = self.sell(size=sellamount)
 
         # record highest and lowest portfolio value
         self.highest = max(self.highest, self.broker.getvalue())
@@ -352,7 +352,7 @@ class myStrategy(bt.Strategy):
         self.sellcriteria = max(self.sellcriteria, self.broker.getvalue())
 
     def stop(self):
-        if args.forcast: return
+        
         # try:
         # # self.analyzers.returns.stop()
         # self.analyzers.vwr.stop()
@@ -365,12 +365,12 @@ class myStrategy(bt.Strategy):
         calmar = self.analyzers.mycalmar.calmar
         maxdrawndown = self.analyzers.mydrawdown.get_analysis()['max']['drawdown']
         if sharpe_ratio is None: sharpe_ratio = 0
-        self.log('(beta %.2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f max drawndown %.2f Calmar %.2f' %
-                 (self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,maxdrawndown,calmar), doprint=True)
-        
+        self.log('(beta %.2f) Ending Value %.2f Highest %.2f Lowest %.2f sharperatio %.2f max drawndown %.2f' %
+                 (self.params.beta, self.broker.getvalue(),self.highest,self.lowest,sharpe_ratio,maxdrawndown), doprint=True)
+        if args.forcast: return
         # append results to csv file
         with open(os.path.join(args.save_path,f'{args.method}_results.csv'), 'a') as f:
-            f.write(f'{self.company},{self.params.whichyhat},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio},{maxdrawndown},{calmar}\n')
+            f.write(f'{self.company},{self.params.whichyhat},{self.params.beta},{self.broker.getvalue()},{self.highest},{self.lowest},{sharpe_ratio},{maxdrawndown}\n')
         f.close()
         
     
