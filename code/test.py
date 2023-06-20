@@ -48,6 +48,21 @@ class SharpeRatio(Analyzer):
 
     def get_analysis(self):
         return dict(sharperatio=self.ratio)
+class ChandelierExit(bt.Indicator):
+
+    ''' https://corporatefinanceinstitute.com/resources/knowledge/trading-investing/chandelier-exit/ '''
+
+    lines = ('long', 'short')
+    params = (('period', 22), ('multip', 3),)
+
+    plotinfo = dict(subplot=False)
+
+    def __init__(self):
+        highest = bt.ind.Highest(self.data.high, period=self.p.period)
+        lowest = bt.ind.Lowest(self.data.low, period=self.p.period)
+        atr = self.p.multip * bt.ind.ATR(self.data, period=self.p.period)
+        self.lines.long = highest - atr
+        self.lines.short = lowest + atr
 
 class myStrategy(bt.Strategy):
     params = (
@@ -107,6 +122,9 @@ class myStrategy(bt.Strategy):
         self.atr = bt.indicators.ATR(self.data)
         self.highs = bt.indicators.Highest(self.data.high, period=self.params.n)
         self.lows = bt.indicators.Lowest(self.data.low, period=self.params.n)
+        # Add a ChandelierExit indicator
+        self.ce = ChandelierExit(self.data, period=22, multip=3)
+        
 
         # recode values
         self.beta = self.params.beta
@@ -258,6 +276,13 @@ class myStrategy(bt.Strategy):
             
         return 'hold'
     
+    def ce_ind(self):
+        # ChandelierExit indicator
+        if self.ce.long[0] > self.data.close[0]:
+            return 'sell'
+        elif self.ce.short[0] < self.data.close[0]:
+            return 'buy'
+        return 'hold'
 
     def predict(self):
         if args.method == 'ai':
@@ -272,20 +297,25 @@ class myStrategy(bt.Strategy):
             return self.kdj_ind()
         elif args.method == 'trend':
             return self.TrendModel_ind()
+        elif args.method == 'ce':
+            return self.ce_ind()
         elif args.method == 'vote':
-            action1 = self.ai_ind()
-            action2 = self.sma_ind()
+            action_ai = self.ai_ind()
+            action_sma = self.sma_ind()
             action3 = self.rsi_ind()
-            action4 = self.macd_ind()
-            action5 = self.kdj_ind()
-            action6 = self.TrendModel_ind()
-            if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action1}, SMA+: {action2}, Trend+: {action6}, MACD+: {action4}, KDJ-: {action5}')
+            action_macd = self.macd_ind()
+            action_kdj = self.kdj_ind()
+            action_trend = self.TrendModel_ind()
+            action_ce = self.ce_ind()
+            if args.forcast: print(f'Price:{round(self.dataclose[0],2)}, AI+: {action_ai}, SMA+: {action_sma}, Trend+: {action_trend}, MACD+: {action_macd}, KDJ-: {action_kdj}')
             #count the number of buy and sell and hold
             # msa performs best
-            if action6 != 'hold':
-                return action6
+            if action_trend != 'hold':
+                return action_trend
+            elif action_ce == 'sell':
+                return 'sell'
             else:
-                buy_n, sell_n, hold_n = [[action1,action2,action4].count(i) for i in ['buy','sell','hold']]
+                buy_n, sell_n, hold_n = [[action_ai,action_sma,action_macd].count(i) for i in ['buy','sell','hold']]
                 if buy_n >= 2:
                     return 'buy'
                 elif sell_n >= 2:
@@ -320,14 +350,14 @@ class myStrategy(bt.Strategy):
 
         if args.forcast: print(f'{self.datas[0].datetime.date(0)} Final Action: {action}')
         
-        #sell if current drawdown is more than 20%
+        # sell if current drawdown is more than 20%
         if args.drawdown and self.broker.getvalue() < self.sellcriteria*0.8 and stake > 0:
             self.sellcriteria = self.broker.getvalue()
-            # print(f'{self.datas[0].datetime.date(0)} Sell Criteria: {self.sellcriteria}')
             action = 'sell'
             sellamount = stake
             if self.datas[0].datetime.date(0) == self.final_date and args.forcast:
                 print(f'{self.datas[0].datetime.date(0)} Sell due to drawdown: {self.broker.getvalue()}')
+
 
         # Check if we are in the market
         # if not self.position:
